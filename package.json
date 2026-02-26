@@ -8,9 +8,19 @@
   },
   "dependencies": {
     "cors": "^2.8.5",
-    "express": "^4.18.2"
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "mongoose": "^8.0.3"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
   }
 }
+```
+
+---
+
+### `.env` (create this in your backend folder)
+```
+MONGO_URI=mongodb+srv://USERNAME:PASSWORD@cluster0.xxxxx.mongodb.net/notely?retryWrites=true&w=majority
+PORT=3000
