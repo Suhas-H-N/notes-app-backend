@@ -1,85 +1,96 @@
 const express = require('express');
 const cors = require('cors');
-const fs = require('fs');
-const path = require('path');
+const mongoose = require('mongoose');
+require('dotenv').config();
 
 const app = express();
-const PORT = 3000;
-const DB_FILE = path.join(__dirname, 'notes.json');
+const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
 
-function readNotes() {
-  if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, '[]');
-  return JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
-}
+// ===== MONGODB CONNECTION =====
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log('✅ MongoDB connected'))
+  .catch(err => {
+    console.error('❌ MongoDB connection error:', err.message);
+    process.exit(1);
+  });
 
-function writeNotes(notes) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(notes, null, 2));
-}
+// ===== SCHEMA =====
+const noteSchema = new mongoose.Schema(
+  {
+    title:    { type: String, default: '' },
+    text:     { type: String, default: '' },
+    category: { type: String, enum: ['personal', 'work', 'ideas', 'important'], default: 'personal' },
+    pinned:   { type: Boolean, default: false },
+  },
+  { timestamps: true }
+);
 
-function nextId(notes) {
-  return notes.length > 0 ? Math.max(...notes.map(n => n.id)) + 1 : 1;
-}
+const Note = mongoose.model('Note', noteSchema);
 
-// GET all
-app.get('/notes', (req, res) => {
-  res.json(readNotes());
+// ===== ROUTES =====
+
+// GET all notes
+app.get('/notes', async (req, res) => {
+  try {
+    const notes = await Note.find().sort({ pinned: -1, createdAt: -1 });
+    res.json(notes);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// GET one
-app.get('/notes/:id', (req, res) => {
-  const notes = readNotes();
-  const note = notes.find(n => n.id === parseInt(req.params.id));
-  if (!note) return res.status(404).json({ error: 'Note not found' });
-  res.json(note);
+// GET single note
+app.get('/notes/:id', async (req, res) => {
+  try {
+    const note = await Note.findById(req.params.id);
+    if (!note) return res.status(404).json({ error: 'Note not found' });
+    res.json(note);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// POST create
-app.post('/notes', (req, res) => {
-  const notes = readNotes();
-  const { title, text, category, pinned } = req.body;
-  const note = {
-    id: nextId(notes),
-    title: title || '',
-    text: text || '',
-    category: category || 'personal',
-    pinned: !!pinned,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-  notes.unshift(note);
-  writeNotes(notes);
-  res.status(201).json(note);
+// POST create note
+app.post('/notes', async (req, res) => {
+  try {
+    const { title, text, category, pinned } = req.body;
+    const note = await Note.create({ title, text, category, pinned });
+    res.status(201).json(note);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
-// PUT update
-app.put('/notes/:id', (req, res) => {
-  const notes = readNotes();
-  const idx = notes.findIndex(n => n.id === parseInt(req.params.id));
-  if (idx === -1) return res.status(404).json({ error: 'Note not found' });
-  notes[idx] = {
-    ...notes[idx],
-    ...req.body,
-    id: notes[idx].id,
-    createdAt: notes[idx].createdAt,
-    updatedAt: new Date().toISOString(),
-  };
-  writeNotes(notes);
-  res.json(notes[idx]);
+// PUT update note
+app.put('/notes/:id', async (req, res) => {
+  try {
+    const note = await Note.findByIdAndUpdate(
+      req.params.id,
+      { ...req.body },
+      { new: true, runValidators: true }
+    );
+    if (!note) return res.status(404).json({ error: 'Note not found' });
+    res.json(note);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
-// DELETE
-app.delete('/notes/:id', (req, res) => {
-  let notes = readNotes();
-  const exists = notes.find(n => n.id === parseInt(req.params.id));
-  if (!exists) return res.status(404).json({ error: 'Note not found' });
-  notes = notes.filter(n => n.id !== parseInt(req.params.id));
-  writeNotes(notes);
-  res.json({ success: true });
+// DELETE note
+app.delete('/notes/:id', async (req, res) => {
+  try {
+    const note = await Note.findByIdAndDelete(req.params.id);
+    if (!note) return res.status(404).json({ error: 'Note not found' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
+// ===== START =====
 app.listen(PORT, () => {
   console.log(`✦ Notely server running at http://localhost:${PORT}`);
 });
